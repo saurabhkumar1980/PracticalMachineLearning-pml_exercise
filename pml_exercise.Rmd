@@ -1,0 +1,120 @@
+---
+title: "pml-exercise"
+author: "Saurabh Kumar"
+date: "Wednesday, May 20, 2015"
+output: html_document
+---
+###Synopsis
+Following report takes the personal activity data from  http://groupware.les.inf.puc-rio.br/har and fits a model to the training data to provide predictions for the testing data. Approach first cleans up the data and then fits several models to find the best one and then uses that to predict the test outcomes.
+
+###Reading training and testing data from http://groupware.les.inf.puc-rio.br/har. Groupware has been
+###very genrous in providing the data to be used for this assignment.
+```{r,echo=TRUE}
+   # URL_training <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+  #  URL_testing <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+   # download.file(URL_training,destfile="pml-training.csv", mode="wb")
+    #download.file(URL_testing,destfile="pml-testing.csv", mode="wb")
+    training <- read.csv("pml-training.csv",na.strings = c("NA", ""))
+    testing <- read.csv("pml-testing.csv",na.strings = c("NA", ""))
+    dim(training)
+    dim(testing)
+```
+###Data Cleanup : Some variables are irrelevant, removing them from the dataset
+Remove following columns
+*columns X, User_name, cvtd_timestamp, raw_timestamp_part_2, new_window, num_window
+*columns with nzv as TRUE
+*columns with 95% NAs
+```{r,echo=TRUE}
+library(caret)
+training <- training[,-c(1:7)] 
+testing <- testing[,-c(1:7,160)]
+nsv <- data.frame(nearZeroVar(training, saveMetrics=TRUE))
+cnm <- rownames(nsv[!nsv$nzv,])
+training <- training[, cnm]
+testing <- testing[, cnm[1:length(cnm)-1]]
+training <- training[, colSums(is.na(training)) < 0.95 * nrow(training)]
+testing <- testing[,c(names(training[,-ncol(training)]))]
+```
+###Partition the training test data set to allow cross validation. Partition will be at 70% and 30%
+```{r.echo=TRUE}
+subTrain <- createDataPartition(y=training$classe,p=0.70,list=FALSE)
+subTraining <- training[subTrain,]
+subTest <- training[-subTrain,]
+```
+###Plot the output data in subTraining
+```{r.echo=TRUE}
+plot(subTraining$classe, col="cyan", xlab="Classe Levels", ylab="Frequency")
+```
+We do not see a lot of skewness which is good. Level A is most common.  
+
+###Fit classification tree and random forest models one by one and check with subTraining data and test them with subTesting data.
+
+### model 1 : classification tree without preprocessing
+```{r.echo=TRUE}
+library(rattle)
+library(rpart)
+set.seed(12345)
+model1 <- train(classe ~ ., method="rpart", data=subTraining)
+prediction1 <- predict(model1, subTest)
+fancyRpartPlot(model1$finalModel)
+```
+### model 1 : Check accuracy on subTest data
+```{r.echo=TRUE}
+confusionMatrix(prediction1,subTest$classe)
+```
+
+### model 2 : classification tree with preprocessing
+```{r.echo=TRUE}
+model2 <- train(classe ~ ., method="rpart",preProcess="pca", data=subTraining)
+prediction2 <- predict(model2, subTest)
+fancyRpartPlot(model2$finalModel)
+```
+### model 2 : Check accuracy on subTest data
+```{r.echo=TRUE}
+
+confusionMatrix(prediction2,subTest$classe)
+```
+
+### model 3 : Random Forest without preprocessing
+```{r.echo=TRUE}
+library(randomForest)
+model3 <- randomForest(subTraining[,-c(ncol(subTraining))], subTraining$classe)
+prediction3 <- predict(model3, subTest)
+#fancyRpartPlot(model3$finalModel)
+```
+### model 3 : Check accuracy on subTest data
+```{r.echo=TRUE}
+
+confusionMatrix(prediction3,subTest$classe)
+```
+
+
+### model 4 : Random Forest with preprocessing
+```{r.echo=TRUE}
+model4 <- randomForest(subTraining[,-c(ncol(subTraining))], subTraining$classe,preProcess="pca")
+prediction4 <- predict(model4, subTest)
+#fancyRpartPlot(model3$finalModel)
+```
+### model 4 : Check accuracy on subTest data
+```{r.echo=TRUE}
+confusionMatrix(prediction4,subTest$classe)
+```
+
+###Model Selection and execution against testing data
+Model 4, Random Forest with preporcessing using PCA is the most accurate.
+Running model 4 against the test data
+```{r, echo=TRUE}
+prediction <- predict(model4,newdata=testing)
+```
+
+### Generating files for submission.
+```{r,echo=TRUE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(prediction)
+```
